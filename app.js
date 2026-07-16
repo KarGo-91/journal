@@ -1,4 +1,4 @@
-// Quietude Journaling App Logic
+// Ambitious Journaling App Logic
 
 // state management
 let state = {
@@ -648,11 +648,11 @@ function renderHeatmapGrid() {
             
             // set fill intensity
             if (wordCount < 100) {
-                cell.style.backgroundColor = 'rgba(16, 185, 129, 0.3)';
+                cell.style.backgroundColor = 'rgba(0, 172, 193, 0.3)';
             } else if (wordCount < 300) {
-                cell.style.backgroundColor = 'rgba(16, 185, 129, 0.6)';
+                cell.style.backgroundColor = 'rgba(0, 172, 193, 0.6)';
             } else {
-                cell.style.backgroundColor = 'rgba(16, 185, 129, 0.9)';
+                cell.style.backgroundColor = 'rgba(0, 172, 193, 0.9)';
             }
         }
         
@@ -730,7 +730,7 @@ function exportDecryptedDatabase() {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.entries, null, 2));
     const dlAnchorElem = document.createElement('a');
     dlAnchorElem.setAttribute("href", dataStr);
-    dlAnchorElem.setAttribute("download", `quietude_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    dlAnchorElem.setAttribute("download", `ambitious_backup_${new Date().toISOString().slice(0, 10)}.json`);
     dlAnchorElem.click();
 }
 

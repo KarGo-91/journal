@@ -45,7 +45,7 @@ def send_email(subject, html_body, receiver):
         
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = f"Quietude Journal <{sender}>"
+    msg["From"] = f"Ambitious Journal <{sender}>"
     msg["To"] = receiver
     
     part_html = MIMEText(html_body, "html")
@@ -87,7 +87,7 @@ def main():
         <!-- Header banner -->
         <tr>
             <td style="background: linear-gradient(135deg, #10b981 0%, #8b5cf6 100%); padding: 40px 30px; text-align: center;">
-                <h1 style="margin: 0; font-family: Georgia, serif; font-size: 26px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">Quietude</h1>
+                <h1 style="margin: 0; font-family: Georgia, serif; font-size: 26px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">Ambitious</h1>
                 <p style="margin: 5px 0 0 0; font-size: 14px; color: rgba(255, 255, 255, 0.85); font-weight: 500;">Your daily space for reflection</p>
             </td>
         </tr>

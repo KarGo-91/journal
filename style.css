@@ -1,28 +1,28 @@
-/* CSS Design System - Quietude Diary */
+/* CSS Design System - Ambitious Diary (River Nature & Stone Theme) */
 
 :root {
     /* Color Tokens */
-    --base-bg: #090d16;
-    --content-bg: #0e1320;
-    --sidebar-bg: #060910;
-    --card-bg: rgba(22, 30, 49, 0.6);
-    --card-bg-hover: rgba(30, 41, 67, 0.8);
-    --card-bg-light: rgba(255, 255, 255, 0.03);
+    --base-bg: #0a1118;
+    --content-bg: #0d1720;
+    --sidebar-bg: #050a0f;
+    --card-bg: rgba(16, 26, 36, 0.6);
+    --card-bg-hover: rgba(24, 40, 56, 0.8);
+    --card-bg-light: rgba(255, 255, 255, 0.02);
     
-    --border-color: rgba(255, 255, 255, 0.07);
-    --border-color-focus: rgba(16, 185, 129, 0.4);
+    --border-color: rgba(255, 255, 255, 0.05);
+    --border-color-focus: rgba(0, 188, 212, 0.4);
     
-    --text-primary: #f8fafc;
+    --text-primary: #f1f5f9;
     --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --text-muted: #475569;
     
-    /* Accents (HSL Tailored) */
-    --accent-emerald: #10b981;
-    --accent-violet: #8b5cf6;
-    --accent-rose: #f43f5e;
+    /* Accents (River water, moss stones, clay coral) */
+    --accent-emerald: #00acc1; /* Deep Water Teal */
+    --accent-violet: #4caf50;  /* Moss Green */
+    --accent-rose: #ff7043;    /* River Clay Orange */
     
-    --gradient-primary: linear-gradient(135deg, #10b981 0%, #8b5cf6 100%);
-    --gradient-card: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+    --gradient-primary: linear-gradient(135deg, #00acc1 0%, #4caf50 100%);
+    --gradient-card: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.005) 100%);
     
     /* Transitions */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -71,8 +71,8 @@ body {
     min-height: 100vh;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.1) 0%, rgba(0, 0, 0, 0) 40%),
-                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.08) 0%, rgba(0, 0, 0, 0) 45%),
+    background: radial-gradient(circle at 10% 20%, rgba(0, 172, 193, 0.1) 0%, rgba(0, 0, 0, 0) 45%),
+                radial-gradient(circle at 90% 80%, rgba(76, 175, 80, 0.06) 0%, rgba(0, 0, 0, 0) 45%),
                 var(--base-bg);
     padding: 20px;
 }
