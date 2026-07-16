@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quietude — Personal Diary</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Main Style Sheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 1. AUTH / LOCK SCREEN -->
+    <div id="auth-screen" class="screen active">
+        <div class="auth-card glass">
+            <div class="auth-header">
+                <div class="brand-icon"><i class="fa-solid fa-feather-pointed"></i></div>
+                <h1>Quietude</h1>
+                <p>Your secure, encrypted space for thoughts.</p>
+            </div>
+            
+            <form id="auth-form" class="auth-form">
+                <div class="form-group">
+                    <label for="master-password"><i class="fa-solid fa-lock"></i> Master Password</label>
+                    <input type="password" id="master-password" placeholder="Enter password to decrypt journal" required autocomplete="current-password">
+                    <span class="help-text">Used client-side for AES-GCM encryption. Never sent to any server.</span>
+                </div>
+                
+                <div class="setup-only hidden" id="setup-fields">
+                    <div class="form-group">
+                        <label for="github-pat"><i class="fa-brands fa-github"></i> GitHub Personal Access Token (PAT)</label>
+                        <input type="password" id="github-pat" placeholder="ghp_xxxxxxxxxxxx">
+                        <span class="help-text">Needed to commit encrypted entries. Saved locally in browser storage.</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="github-repo"><i class="fa-solid fa-folder-open"></i> GitHub Repository</label>
+                        <input type="text" id="github-repo" placeholder="username/repository-name">
+                        <span class="help-text">e.g., KarGo-91/journal (must be created on GitHub)</span>
+                    </div>
+                </div>
+
+                <div id="auth-error" class="auth-error hidden"></div>
+
+                <button type="submit" id="btn-login" class="btn btn-primary btn-block">
+                    <span>Unlock Journal</span> <i class="fa-solid fa-key"></i>
+                </button>
+            </form>
+
+            <div class="auth-footer">
+                <a href="#" id="toggle-setup-mode">First-time configuration / Setup PAT</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. MAIN APP SCREEN -->
+    <div id="app-screen" class="screen">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <i class="fa-solid fa-feather-pointed"></i>
+                <span>Quietude</span>
+            </div>
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-tab="write"><i class="fa-solid fa-pen-nib"></i> <span>Write</span></button>
+                <button class="nav-item" data-tab="history"><i class="fa-solid fa-book-open"></i> <span>Entries</span></button>
+                <button class="nav-item" data-tab="stats"><i class="fa-solid fa-chart-line"></i> <span>Insights</span></button>
+                <button class="nav-item" data-tab="settings"><i class="fa-solid fa-sliders"></i> <span>Settings</span></button>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="btn-lock" class="btn btn-icon btn-outline" title="Lock Journal"><i class="fa-solid fa-lock"></i></button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="content-area">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="date-greeting">
+                    <span id="header-greeting">Hello, friend</span>
+                    <h2 id="header-date">Thursday, July 16, 2026</h2>
+                </div>
+                <div class="status-indicator">
+                    <span id="sync-status" class="sync-success"><i class="fa-solid fa-cloud-check"></i> Encrypted Sync Active</span>
+                </div>
+            </header>
+
+            <!-- Tab Content 1: Write -->
+            <section id="tab-write" class="tab-content active">
+                <div class="editor-container">
+                    <div class="editor-meta">
+                        <div class="mood-selector-container">
+                            <span class="label-text">How are you feeling today?</span>
+                            <div class="mood-options">
+                                <button type="button" class="mood-btn" data-mood="inspired" title="Inspired">🌟</button>
+                                <button type="button" class="mood-btn" data-mood="peaceful" title="Peaceful">😌</button>
+                                <button type="button" class="mood-btn" data-mood="focused" title="Focused">🧠</button>
+                                <button type="button" class="mood-btn" data-mood="tired" title="Tired">🥱</button>
+                                <button type="button" class="mood-btn" data-mood="low" title="Low">😔</button>
+                            </div>
+                        </div>
+                        <div class="word-counter">
+                            <span id="word-count">0</span> words
+                        </div>
+                    </div>
+
+                    <div class="editor-card glass">
+                        <input type="text" id="entry-title" class="entry-title-input" placeholder="Title your reflection..." autocomplete="off">
+                        <textarea id="entry-body" class="entry-textarea" placeholder="Start writing your thoughts here..."></textarea>
+                    </div>
+
+                    <div class="editor-actions">
+                        <span id="autosave-status" class="autosave-text">All progress saved locally</span>
+                        <button id="btn-save" class="btn btn-primary">
+                            <i class="fa-solid fa-cloud-arrow-up"></i> Save & Encrypt Entry
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab Content 2: History -->
+            <section id="tab-history" class="tab-content">
+                <div class="history-container">
+                    <div class="search-bar-container">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="search-entries" placeholder="Search entries by title or content...">
+                    </div>
+                    
+                    <div class="history-grid">
+                        <div class="history-list-card glass">
+                            <h3>Past Reflections</h3>
+                            <div id="history-entries-list" class="entries-list">
+                                <!-- Dynamic entries list items -->
+                                <div class="no-entries">No reflections found. Start writing today!</div>
+                            </div>
+                        </div>
+                        
+                        <div class="entry-viewer-card glass">
+                            <div id="viewer-placeholder" class="viewer-placeholder">
+                                <i class="fa-solid fa-book-open-reader"></i>
+                                <p>Select an entry from the list to read or edit.</p>
+                            </div>
+                            <div id="viewer-content" class="viewer-content hidden">
+                                <div class="viewer-header">
+                                    <div>
+                                        <h2 id="viewer-title">Reflection Title</h2>
+                                        <span id="viewer-date" class="viewer-meta-date">July 16, 2026</span>
+                                        <span id="viewer-mood" class="viewer-meta-mood">🌟 Inspired</span>
+                                    </div>
+                                    <div class="viewer-actions">
+                                        <button id="btn-edit-entry" class="btn btn-outline btn-sm"><i class="fa-solid fa-pen"></i> Edit</button>
+                                        <button id="btn-delete-entry" class="btn btn-danger btn-sm"><i class="fa-solid fa-trash"></i> Delete</button>
+                                    </div>
+                                </div>
+                                <hr class="viewer-divider">
+                                <div id="viewer-body" class="viewer-body-text">
+                                    Reflection body text...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab Content 3: Insights -->
+            <section id="tab-stats" class="tab-content">
+                <div class="stats-container">
+                    <div class="stats-grid">
+                        <div class="stat-card glass">
+                            <div class="stat-icon"><i class="fa-solid fa-fire"></i></div>
+                            <div class="stat-info">
+                                <h4 id="stat-streak">0 Days</h4>
+                                <p>Current Streak</p>
+                            </div>
+                        </div>
+                        <div class="stat-card glass">
+                            <div class="stat-icon"><i class="fa-solid fa-pen-nib"></i></div>
+                            <div class="stat-info">
+                                <h4 id="stat-total-entries">0</h4>
+                                <p>Total Reflections</p>
+                            </div>
+                        </div>
+                        <div class="stat-card glass">
+                            <div class="stat-icon"><i class="fa-solid fa-align-left"></i></div>
+                            <div class="stat-info">
+                                <h4 id="stat-total-words">0</h4>
+                                <p>Total Words Written</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Calendar Heatmap Grid Card -->
+                    <div class="stats-card-large glass">
+                        <h3>Journal Grid</h3>
+                        <p class="subtitle">Your writing habits visualized over the year.</p>
+                        <div class="heatmap-wrapper">
+                            <div class="heatmap-legend">
+                                <span>Less</span>
+                                <div class="legend-box" style="background-color: var(--card-bg-light);"></div>
+                                <div class="legend-box" style="background-color: rgba(16, 185, 129, 0.3);"></div>
+                                <div class="legend-box" style="background-color: rgba(16, 185, 129, 0.6);"></div>
+                                <div class="legend-box" style="background-color: rgba(16, 185, 129, 0.9);"></div>
+                                <span>More</span>
+                            </div>
+                            <div id="heatmap-grid" class="heatmap-grid">
+                                <!-- Calendar grid squares injected dynamically -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Mood Distribution Card -->
+                    <div class="stats-card-large glass">
+                        <h3>Mood Patterns</h3>
+                        <p class="subtitle">Understanding your emotional landscape.</p>
+                        <div id="mood-stats-list" class="mood-stats-list">
+                            <!-- Dynamic list of mood bars -->
+                            <div class="no-stats">Write entries and select moods to see insights!</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab Content 4: Settings -->
+            <section id="tab-settings" class="tab-content">
+                <div class="settings-container">
+                    <div class="settings-card glass">
+                        <h3>Credentials & Config</h3>
+                        <p class="subtitle">Update token or repository parameters stored on this device.</p>
+                        
+                        <form id="settings-form">
+                            <div class="form-group">
+                                <label for="settings-github-pat">GitHub Personal Access Token (PAT)</label>
+                                <input type="password" id="settings-github-pat" placeholder="Keep current token or enter new one">
+                            </div>
+                            <div class="form-group">
+                                <label for="settings-github-repo">GitHub Repository</label>
+                                <input type="text" id="settings-github-repo" placeholder="username/repository">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Update Configuration</button>
+                        </form>
+                    </div>
+
+                    <div class="settings-card glass">
+                        <h3>Data Export & Backups</h3>
+                        <p class="subtitle">Quietude is a zero-knowledge app. Maintain your own database backups.</p>
+                        <div class="settings-actions">
+                            <button id="btn-export-decrypted" class="btn btn-outline">
+                                <i class="fa-solid fa-download"></i> Download Decrypted JSON Database
+                            </button>
+                            <span class="action-help">Downloads all journal entries as a single clean, readable JSON file to your computer.</span>
+                        </div>
+                    </div>
+
+                    <div class="settings-card glass danger-card">
+                        <h3>Reset Quietude</h3>
+                        <p class="subtitle">Clears all configuration cache and local storage on this device.</p>
+                        <div class="settings-actions">
+                            <button id="btn-clear-cache" class="btn btn-danger">
+                                <i class="fa-solid fa-trash-can"></i> Clear Local Cache & Logout
+                            </button>
+                            <span class="action-help">This will log you out and clear the PAT and password hash cached locally. Encrypted data on GitHub is preserved.</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Crypto / Main App Logic Scripts -->
+    <script src="app.js"></script>
+</body>
+</html>
