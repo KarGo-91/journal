@@ -5,11 +5,19 @@ let state = {
     password: '',
     pat: '',
     repo: '',
-    entries: {}, // cache of decrypted entries: { "YYYY-MM-DD": { title, body, mood, lastModified } }
+    entries: {}, // cache of decrypted entries: { "file_id": { title, body, mood, timestamp, sha } }
     activeTab: 'write',
     activeMood: '',
-    selectedHistoryDate: null
+    selectedHistoryDate: null,
+    editingFileId: null
 };
+
+// Helper function to get all entries for a specific date (YYYY-MM-DD)
+function getEntriesForDate(dateStr) {
+    return Object.keys(state.entries)
+        .filter(key => key === dateStr || key.startsWith(dateStr + '_'))
+        .map(key => ({ id: key, ...state.entries[key] }));
+}
 
 // DOM Elements
 const authScreen = document.getElementById('auth-screen');
@@ -277,21 +285,17 @@ function loadLocalCache() {
 
 // 4. EDITOR LOGIC
 function setupEditor() {
-    const today = getTodayString();
-    
-    // Check if we already have an entry for today loaded
-    if (state.entries[today]) {
-        const entry = state.entries[today];
+    if (state.editingFileId) {
+        const entry = state.entries[state.editingFileId];
         entryTitle.value = entry.title;
         entryBody.value = entry.body;
         selectMood(entry.mood);
-        btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Update Today\'s Entry';
+        btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Update Reflection';
     } else {
-        // Reset Editor for a new entry
         entryTitle.value = '';
         entryBody.value = '';
         selectMood('');
-        btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Save & Encrypt Entry';
+        btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Save & Encrypt Reflection';
     }
     updateWordCount();
 }
@@ -313,7 +317,7 @@ function updateWordCount() {
     wordCountText.textContent = count;
 }
 
-// Save Entry Function
+// Save Entry Function (handles both new entries and updates)
 async function saveCurrentEntry() {
     const title = entryTitle.value.trim();
     const body = entryBody.value.trim();
@@ -328,29 +332,39 @@ async function saveCurrentEntry() {
     btnSave.disabled = true;
     
     const today = getTodayString();
+    
+    // Determine file_id and path
+    let fileId = state.editingFileId;
+    let isNew = false;
+    if (!fileId) {
+        fileId = `${today}_${Date.now()}`;
+        isNew = true;
+    }
+    
+    const path = `entries/${fileId}.enc`;
     const entryData = {
         title: title || 'Untitled Reflection',
         body: body,
         mood: mood,
-        timestamp: Date.now()
+        timestamp: isNew ? Date.now() : (state.entries[fileId]?.timestamp || Date.now())
     };
     
     try {
         const jsonStr = JSON.stringify(entryData);
         const encryptedBase64 = await encryptData(jsonStr, state.password);
         
-        // Check if file exists to get SHA for updates
-        const path = `entries/${today}.enc`;
         let sha = null;
-        try {
-            const existingFile = await fetchGithubFile(path);
-            if (existingFile) sha = existingFile.sha;
-        } catch (e) {}
+        if (!isNew) {
+            try {
+                const existingFile = await fetchGithubFile(path);
+                if (existingFile) sha = existingFile.sha;
+            } catch (e) {}
+        }
         
         const result = await writeGithubFile(path, encryptedBase64, sha);
         
         // Update local state cache
-        state.entries[today] = {
+        state.entries[fileId] = {
             title: entryData.title,
             body: entryData.body,
             mood: entryData.mood,
@@ -360,7 +374,10 @@ async function saveCurrentEntry() {
         
         saveLocalCache();
         btnSave.disabled = false;
-        setSyncStatus('success', 'Entry successfully encrypted & synced.');
+        setSyncStatus('success', 'Reflection safely saved.');
+        
+        // Reset editor state
+        state.editingFileId = null;
         setupEditor();
         renderHistory();
         renderStats();
@@ -369,7 +386,7 @@ async function saveCurrentEntry() {
     } catch (err) {
         console.error(err);
         btnSave.disabled = false;
-        setSyncStatus('error', 'Save failed. Check PAT permission or repo name.');
+        setSyncStatus('error', 'Save failed.');
         alert(`Error saving entry: ${err.message}`);
     }
 }
@@ -379,11 +396,11 @@ function renderHistory() {
     const searchQuery = searchEntries.value.toLowerCase().trim();
     historyEntriesList.innerHTML = '';
     
-    const sortedDates = Object.keys(state.entries).sort((a, b) => b.localeCompare(a));
+    const sortedFileIds = Object.keys(state.entries).sort((a, b) => b.localeCompare(a));
     let count = 0;
     
-    sortedDates.forEach(date => {
-        const entry = state.entries[date];
+    sortedFileIds.forEach(id => {
+        const entry = state.entries[id];
         
         // Filter by search query
         if (searchQuery) {
@@ -394,21 +411,27 @@ function renderHistory() {
         
         count++;
         const item = document.createElement('div');
-        item.className = `history-item ${state.selectedHistoryDate === date ? 'active' : ''}`;
-        item.dataset.date = date;
+        item.className = `history-item ${state.selectedHistoryDate === id ? 'active' : ''}`;
+        item.dataset.date = id;
         
         const moodEmoji = getMoodEmoji(entry.mood);
+        const datePart = id.split('_')[0];
+        let timeStr = '';
+        if (entry.timestamp) {
+            const timeObj = new Date(entry.timestamp);
+            timeStr = timeObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
         
         item.innerHTML = `
             <div class="history-item-header">
-                <span class="history-item-date">${date}</span>
+                <span class="history-item-date">${datePart} ${timeStr ? '<span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">' + timeStr + '</span>' : ''}</span>
                 <span class="history-item-mood">${moodEmoji}</span>
             </div>
             <div class="history-item-title">${entry.title}</div>
         `;
         
         item.addEventListener('click', () => {
-            selectHistoryEntry(date);
+            selectHistoryEntry(id);
         });
         
         historyEntriesList.appendChild(item);
@@ -430,24 +453,27 @@ function getMoodEmoji(mood) {
     return moods[mood] || '✍️';
 }
 
-function selectHistoryEntry(date) {
-    state.selectedHistoryDate = date;
+function selectHistoryEntry(id) {
+    state.selectedHistoryDate = id;
     
     // Highlight list item
     document.querySelectorAll('.history-item').forEach(item => {
-        if (item.dataset.date === date) {
+        if (item.dataset.date === id) {
             item.classList.add('active');
         } else {
             item.classList.remove('active');
         }
     });
     
-    const entry = state.entries[date];
+    const entry = state.entries[id];
     viewerPlaceholder.classList.add('hidden');
     viewerContent.classList.remove('hidden');
     
+    const datePart = id.split('_')[0];
+    const timeStr = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    
     viewerTitle.textContent = entry.title;
-    viewerDate.textContent = formatDate(date);
+    viewerDate.textContent = `${formatDate(datePart)} ${timeStr ? 'at ' + timeStr : ''}`;
     viewerMood.textContent = `${getMoodEmoji(entry.mood)} ${entry.mood ? entry.mood.charAt(0).toUpperCase() + entry.mood.slice(1) : 'Standard'}`;
     viewerBody.textContent = entry.body;
 }
@@ -456,8 +482,10 @@ function selectHistoryEntry(date) {
 function editSelectedEntry() {
     if (!state.selectedHistoryDate) return;
     
-    const date = state.selectedHistoryDate;
-    const entry = state.entries[date];
+    const id = state.selectedHistoryDate;
+    const entry = state.entries[id];
+    
+    state.editingFileId = id;
     
     // Switch to Write tab
     switchTab('write');
@@ -468,89 +496,26 @@ function editSelectedEntry() {
     selectMood(entry.mood);
     updateWordCount();
     
-    // Check if the entry is from today
-    const today = getTodayString();
-    if (date === today) {
-        btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Update Today\'s Entry';
-    } else {
-        btnSave.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Update Entry (${date})`;
-        // Temporarily adjust today behavior if editing an older file
-        btnSave.onclick = async () => {
-            await updateOlderEntry(date);
-        };
-    }
-}
-
-async function updateOlderEntry(targetDate) {
-    const title = entryTitle.value.trim();
-    const body = entryBody.value.trim();
-    const mood = state.activeMood;
-    
-    if (!body) return;
-    
-    setSyncStatus('syncing', 'Updating encrypted entry...');
-    btnSave.disabled = true;
-    
-    const entryData = {
-        title: title || 'Untitled Reflection',
-        body: body,
-        mood: mood,
-        timestamp: Date.now()
-    };
-    
-    try {
-        const jsonStr = JSON.stringify(entryData);
-        const encryptedBase64 = await encryptData(jsonStr, state.password);
-        
-        const path = `entries/${targetDate}.enc`;
-        const existing = await fetchGithubFile(path);
-        const sha = existing ? existing.sha : null;
-        
-        const result = await writeGithubFile(path, encryptedBase64, sha);
-        
-        state.entries[targetDate] = {
-            title: entryData.title,
-            body: entryData.body,
-            mood: entryData.mood,
-            timestamp: entryData.timestamp,
-            sha: result.content.sha
-        };
-        
-        saveLocalCache();
-        btnSave.disabled = false;
-        setSyncStatus('success', 'Entry updated successfully.');
-        
-        // Restore default save button action
-        btnSave.onclick = saveCurrentEntry;
-        setupEditor();
-        renderHistory();
-        renderStats();
-        alert('The entry has been successfully updated on your GitHub repository!');
-    } catch (err) {
-        console.error(err);
-        btnSave.disabled = false;
-        setSyncStatus('error', 'Update failed.');
-        alert(`Error updating entry: ${err.message}`);
-    }
+    btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Update Reflection';
 }
 
 async function deleteSelectedEntry() {
     if (!state.selectedHistoryDate) return;
-    const date = state.selectedHistoryDate;
+    const id = state.selectedHistoryDate;
     
-    if (!confirm(`Are you absolutely sure you want to delete the reflection for ${date}? This action is permanent.`)) {
+    if (!confirm('Are you absolutely sure you want to delete this reflection? This action is permanent.')) {
         return;
     }
     
     setSyncStatus('syncing', 'Deleting entry...');
     try {
-        const path = `entries/${date}.enc`;
+        const path = `entries/${id}.enc`;
         const fileData = await fetchGithubFile(path);
         if (fileData) {
             await deleteGithubFile(path, fileData.sha);
         }
         
-        delete state.entries[date];
+        delete state.entries[id];
         saveLocalCache();
         
         // reset UI
@@ -570,15 +535,16 @@ async function deleteSelectedEntry() {
 }
 
 // 6. INSIGHTS & STATS LOGIC
+
 function renderStats() {
-    const dates = Object.keys(state.entries).sort();
-    const totalEntries = dates.length;
+    const fileIds = Object.keys(state.entries);
+    const totalEntries = fileIds.length;
     statTotalEntries.textContent = totalEntries;
     
     // Total words calculation
     let totalWords = 0;
-    dates.forEach(d => {
-        const text = state.entries[d].body.trim();
+    fileIds.forEach(id => {
+        const text = state.entries[id].body.trim();
         if (text) {
             totalWords += text.split(/\s+/).length;
         }
@@ -587,23 +553,21 @@ function renderStats() {
     
     // Current streak calculation
     let streak = 0;
-    let checkDate = new Date();
-    // If we wrote today, start checks from today, else start checks from yesterday
     const todayStr = getTodayString();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().slice(0, 10);
     
     let baseDateStr = todayStr;
-    if (!state.entries[todayStr] && state.entries[yesterdayStr]) {
+    if (getEntriesForDate(todayStr).length === 0 && getEntriesForDate(yesterdayStr).length > 0) {
         baseDateStr = yesterdayStr;
     }
     
-    if (state.entries[baseDateStr]) {
+    if (getEntriesForDate(baseDateStr).length > 0) {
         let current = new Date(baseDateStr);
         while (true) {
             const currentStr = current.toISOString().slice(0, 10);
-            if (state.entries[currentStr]) {
+            if (getEntriesForDate(currentStr).length > 0) {
                 streak++;
                 current.setDate(current.getDate() - 1);
             } else {
@@ -623,14 +587,10 @@ function renderStats() {
 function renderHeatmapGrid() {
     heatmapGrid.innerHTML = '';
     
-    // Setup date boundary: 371 squares (53 weeks x 7 days)
-    // Start grid from exactly 1 year ago (same weekday as today)
     const today = new Date();
     const oneYearAgo = new Date();
     oneYearAgo.setDate(today.getDate() - 364); // 52 weeks ago
     
-    // Align starting day to Sunday or Monday
-    // Let's align to oneYearAgo's day of week
     let current = new Date(oneYearAgo);
     
     for (let i = 0; i < 371; i++) {
@@ -640,11 +600,14 @@ function renderHeatmapGrid() {
         
         cell.title = `${dateStr}: No entry`;
         
-        if (state.entries[dateStr]) {
-            const entry = state.entries[dateStr];
-            const wordCount = entry.body.trim().split(/\s+/).length;
+        const dayEntries = getEntriesForDate(dateStr);
+        if (dayEntries.length > 0) {
+            let wordCount = 0;
+            dayEntries.forEach(entry => {
+                wordCount += entry.body.trim().split(/\s+/).length;
+            });
             
-            cell.title = `${dateStr}: ${entry.title} (${wordCount} words)`;
+            cell.title = `${dateStr}: ${dayEntries.length} reflection(s) (${wordCount} words)`;
             
             // set fill intensity
             if (wordCount < 100) {
@@ -657,12 +620,13 @@ function renderHeatmapGrid() {
         }
         
         cell.addEventListener('click', () => {
-            if (state.entries[dateStr]) {
+            const dayEntries = getEntriesForDate(dateStr);
+            if (dayEntries.length > 0) {
                 switchTab('history');
-                selectHistoryEntry(dateStr);
+                selectHistoryEntry(dayEntries[0].id);
             } else {
+                state.editingFileId = null;
                 switchTab('write');
-                // set editor date if we wanted to backdate, but for now just clear
                 setupEditor();
             }
         });
