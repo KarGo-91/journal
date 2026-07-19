@@ -70,10 +70,8 @@ const btnExportDecrypted = document.getElementById('btn-export-decrypted');
 const btnClearCache = document.getElementById('btn-clear-cache');
 
 const inputPhoto = document.getElementById('input-photo');
-const inputVideo = document.getElementById('input-video');
 const btnAddPhoto = document.getElementById('btn-add-photo');
 const btnRecordAudio = document.getElementById('btn-record-audio');
-const btnAddVideo = document.getElementById('btn-add-video');
 const btnStopRecord = document.getElementById('btn-stop-record');
 const btnCancelRecord = document.getElementById('btn-cancel-record');
 const recordingPanel = document.getElementById('recording-panel');
@@ -1342,7 +1340,6 @@ btnLock.addEventListener('click', () => {
 
 // Attachment Event Listeners
 btnAddPhoto.addEventListener('click', () => inputPhoto.click());
-btnAddVideo.addEventListener('click', () => inputVideo.click());
 
 inputPhoto.addEventListener('change', async (e) => {
     const file = e.target.files[0];
@@ -1360,29 +1357,6 @@ inputPhoto.addEventListener('change', async (e) => {
         alert('Failed to process image: ' + err.message);
     }
     inputPhoto.value = '';
-});
-
-inputVideo.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const limit = 35 * 1024 * 1024;
-    if (file.size > limit) {
-        alert('Video file is too large. Please select a video smaller than 35MB to ensure fast encryption & sync.');
-        inputVideo.value = '';
-        return;
-    }
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-        state.currentAttachments.push({
-            type: 'video',
-            name: file.name,
-            data: reader.result
-        });
-        renderEditorAttachments();
-    };
-    reader.onerror = () => alert('Failed to read video file.');
-    inputVideo.value = '';
 });
 
 btnRecordAudio.addEventListener('click', startRecording);
