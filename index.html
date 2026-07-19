@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Main Style Sheet -->
     <link rel="stylesheet" href="style.css">
+    <!-- html2pdf.js for Client-side PDF Exports -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
     <!-- 1. AUTH / LOCK SCREEN -->
@@ -110,6 +112,35 @@
                     <div class="editor-card glass">
                         <input type="text" id="entry-title" class="entry-title-input" placeholder="Title your reflection..." autocomplete="off">
                         <textarea id="entry-body" class="entry-textarea" placeholder="Start writing your thoughts here..."></textarea>
+                        
+                        <!-- Attachment Previews in Editor -->
+                        <div id="editor-attachments" class="editor-attachments-list"></div>
+                        
+                        <!-- Recording Indicator Panel -->
+                        <div id="recording-panel" class="recording-panel hidden">
+                            <div class="rec-indicator">
+                                <span class="rec-dot"></span>
+                                <span id="recording-timer">00:00</span>
+                            </div>
+                            <div class="rec-actions">
+                                <button type="button" class="btn btn-danger btn-sm" id="btn-stop-record"><i class="fa-solid fa-stop"></i> Stop & Save</button>
+                                <button type="button" class="btn btn-outline btn-sm" id="btn-cancel-record"><i class="fa-solid fa-xmark"></i> Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="media-toolbar">
+                        <button type="button" class="btn btn-outline btn-sm btn-icon-text" id="btn-add-photo">
+                            <i class="fa-solid fa-image"></i> <span>Photo</span>
+                        </button>
+                        <button type="button" class="btn btn-outline btn-sm btn-icon-text" id="btn-record-audio">
+                            <i class="fa-solid fa-microphone"></i> <span>Record Voice</span>
+                        </button>
+                        <button type="button" class="btn btn-outline btn-sm btn-icon-text" id="btn-add-video">
+                            <i class="fa-solid fa-video"></i> <span>Video</span>
+                        </button>
+                        <input type="file" id="input-photo" accept="image/*" style="display: none;">
+                        <input type="file" id="input-video" accept="video/*" style="display: none;">
                     </div>
 
                     <div class="editor-actions">
@@ -151,6 +182,7 @@
                                         <span id="viewer-mood" class="viewer-meta-mood">🌟 Inspired</span>
                                     </div>
                                     <div class="viewer-actions">
+                                        <button id="btn-download-pdf" class="btn btn-outline btn-sm"><i class="fa-solid fa-file-pdf"></i> PDF</button>
                                         <button id="btn-edit-entry" class="btn btn-outline btn-sm"><i class="fa-solid fa-pen"></i> Edit</button>
                                         <button id="btn-delete-entry" class="btn btn-danger btn-sm"><i class="fa-solid fa-trash"></i> Delete</button>
                                     </div>
@@ -159,6 +191,7 @@
                                 <div id="viewer-body" class="viewer-body-text">
                                     Reflection body text...
                                 </div>
+                                <div id="viewer-attachments" class="viewer-attachments-container"></div>
                             </div>
                         </div>
                     </div>
@@ -245,12 +278,15 @@
 
                     <div class="settings-card glass">
                         <h3>Data Export & Backups</h3>
-                        <p class="subtitle">Quietude is a zero-knowledge app. Maintain your own database backups.</p>
+                        <p class="subtitle">Ambitious is a zero-knowledge app. Maintain your own database backups.</p>
                         <div class="settings-actions">
                             <button id="btn-export-decrypted" class="btn btn-outline">
                                 <i class="fa-solid fa-download"></i> Download Decrypted JSON Database
                             </button>
-                            <span class="action-help">Downloads all journal entries as a single clean, readable JSON file to your computer.</span>
+                            <button id="btn-export-pdf-book" class="btn btn-outline" style="margin-top: 10px;">
+                                <i class="fa-solid fa-file-pdf"></i> Export Journal as PDF Book
+                            </button>
+                            <span class="action-help">Generates a beautifully formatted PDF book containing all your daily memories, chronological entries, and images.</span>
                         </div>
                     </div>
 
@@ -267,6 +303,13 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- 3. LIGHTBOX MODAL FOR IMAGES -->
+    <div id="lightbox" class="lightbox">
+        <span class="lightbox-close">&times;</span>
+        <img class="lightbox-content" id="lightbox-img" alt="Enlarged reflection media">
+        <div id="lightbox-caption" class="lightbox-caption"></div>
     </div>
 
     <!-- Crypto / Main App Logic Scripts -->

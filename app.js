@@ -9,7 +9,8 @@ let state = {
     activeTab: 'write',
     activeMood: '',
     selectedHistoryDate: null,
-    editingFileId: null
+    editingFileId: null,
+    currentAttachments: []
 };
 
 // Helper function to get all entries for a specific date (YYYY-MM-DD)
@@ -67,6 +68,25 @@ const settingsPat = document.getElementById('settings-github-pat');
 const settingsRepo = document.getElementById('settings-github-repo');
 const btnExportDecrypted = document.getElementById('btn-export-decrypted');
 const btnClearCache = document.getElementById('btn-clear-cache');
+
+const inputPhoto = document.getElementById('input-photo');
+const inputVideo = document.getElementById('input-video');
+const btnAddPhoto = document.getElementById('btn-add-photo');
+const btnRecordAudio = document.getElementById('btn-record-audio');
+const btnAddVideo = document.getElementById('btn-add-video');
+const btnStopRecord = document.getElementById('btn-stop-record');
+const btnCancelRecord = document.getElementById('btn-cancel-record');
+const recordingPanel = document.getElementById('recording-panel');
+const recordingTimer = document.getElementById('recording-timer');
+const editorAttachmentsList = document.getElementById('editor-attachments');
+const viewerAttachments = document.getElementById('viewer-attachments');
+const btnDownloadPdf = document.getElementById('btn-download-pdf');
+const btnExportPdfBook = document.getElementById('btn-export-pdf-book');
+
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
+const lightboxCaption = document.getElementById('lightbox-caption');
+const lightboxClose = document.querySelector('.lightbox-close');
 
 // 1. CRYPTO UTILITIES (AES-GCM Web Crypto API)
 async function hashPassword(password) {
@@ -224,6 +244,7 @@ async function syncFromGithub() {
                                 body: parsed.body,
                                 mood: parsed.mood,
                                 timestamp: parsed.timestamp || Date.now(),
+                                attachments: parsed.attachments || [],
                                 sha: file.sha
                             };
                             fetchedNew = true;
@@ -290,13 +311,16 @@ function setupEditor() {
         entryTitle.value = entry.title;
         entryBody.value = entry.body;
         selectMood(entry.mood);
+        state.currentAttachments = entry.attachments ? [...entry.attachments] : [];
         btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Update Reflection';
     } else {
         entryTitle.value = '';
         entryBody.value = '';
         selectMood('');
+        state.currentAttachments = [];
         btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Save & Encrypt Reflection';
     }
+    renderEditorAttachments();
     updateWordCount();
 }
 
@@ -346,7 +370,8 @@ async function saveCurrentEntry() {
         title: title || 'Untitled Reflection',
         body: body,
         mood: mood,
-        timestamp: isNew ? Date.now() : (state.entries[fileId]?.timestamp || Date.now())
+        timestamp: isNew ? Date.now() : (state.entries[fileId]?.timestamp || Date.now()),
+        attachments: state.currentAttachments
     };
     
     try {
@@ -369,6 +394,7 @@ async function saveCurrentEntry() {
             body: entryData.body,
             mood: entryData.mood,
             timestamp: entryData.timestamp,
+            attachments: entryData.attachments,
             sha: result.content.sha
         };
         
@@ -476,6 +502,7 @@ function selectHistoryEntry(id) {
     viewerDate.textContent = `${formatDate(datePart)} ${timeStr ? 'at ' + timeStr : ''}`;
     viewerMood.textContent = `${getMoodEmoji(entry.mood)} ${entry.mood ? entry.mood.charAt(0).toUpperCase() + entry.mood.slice(1) : 'Standard'}`;
     viewerBody.textContent = entry.body;
+    renderViewerAttachments(entry.attachments || []);
 }
 
 // Edit or delete entries
@@ -494,6 +521,8 @@ function editSelectedEntry() {
     entryTitle.value = entry.title;
     entryBody.value = entry.body;
     selectMood(entry.mood);
+    state.currentAttachments = entry.attachments ? [...entry.attachments] : [];
+    renderEditorAttachments();
     updateWordCount();
     
     btnSave.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Update Reflection';
@@ -810,6 +839,349 @@ async function handleLogin(e) {
     }
 }
 
+// 7. RICH MEDIA & ATTACHMENT UTILITIES
+
+function compressImage(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                const maxDim = 1200;
+                
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height = Math.round((height * maxDim) / width);
+                        width = maxDim;
+                    } else {
+                        width = Math.round((width * maxDim) / height);
+                        height = maxDim;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+                resolve(compressedBase64);
+            };
+            img.onerror = (err) => reject(err);
+        };
+        reader.onerror = (err) => reject(err);
+    });
+}
+
+let mediaRecorder = null;
+let audioChunks = [];
+let recordTimerInterval = null;
+let recordSeconds = 0;
+
+async function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Audio recording is not supported in this browser.');
+        return;
+    }
+    
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+                audioChunks.push(e.data);
+            }
+        };
+        
+        mediaRecorder.start();
+        
+        recordingPanel.classList.remove('hidden');
+        btnRecordAudio.disabled = true;
+        
+        recordSeconds = 0;
+        recordingTimer.textContent = '00:00';
+        recordTimerInterval = setInterval(() => {
+            recordSeconds++;
+            const mins = String(Math.floor(recordSeconds / 60)).padStart(2, '0');
+            const secs = String(recordSeconds % 60).padStart(2, '0');
+            recordingTimer.textContent = `${mins}:${secs}`;
+            
+            if (recordSeconds >= 180) { // Limit to 3 mins
+                stopRecording(true);
+            }
+        }, 1000);
+        
+    } catch (err) {
+        console.error(err);
+        alert('Could not access microphone: ' + err.message);
+    }
+}
+
+function stopRecording(save) {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+    
+    clearInterval(recordTimerInterval);
+    recordingPanel.classList.add('hidden');
+    btnRecordAudio.disabled = false;
+    
+    mediaRecorder.onstop = async () => {
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        
+        if (save && audioChunks.length > 0) {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            
+            if (audioBlob.size > 5 * 1024 * 1024) {
+                alert('Recording is too large (>5MB) and cannot be saved.');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.readAsDataURL(audioBlob);
+            reader.onloadend = () => {
+                state.currentAttachments.push({
+                    type: 'audio',
+                    name: `Voice_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`,
+                    data: reader.result
+                });
+                renderEditorAttachments();
+            };
+        }
+    };
+    
+    mediaRecorder.stop();
+}
+
+function renderEditorAttachments() {
+    editorAttachmentsList.innerHTML = '';
+    
+    state.currentAttachments.forEach((attachment, index) => {
+        const item = document.createElement('div');
+        item.className = 'editor-attachment-item';
+        
+        let icon = '<i class="fa-solid fa-file"></i>';
+        if (attachment.type === 'image') icon = '<i class="fa-solid fa-image"></i>';
+        if (attachment.type === 'audio') icon = '<i class="fa-solid fa-microphone"></i>';
+        if (attachment.type === 'video') icon = '<i class="fa-solid fa-video"></i>';
+        
+        item.innerHTML = `
+            ${icon}
+            <span>${attachment.name}</span>
+            <button type="button" class="btn-remove-attachment" onclick="removeAttachment(${index})">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
+        `;
+        editorAttachmentsList.appendChild(item);
+    });
+}
+
+// Exposed globally so inline HTML onclick works
+window.removeAttachment = function(index) {
+    state.currentAttachments.splice(index, 1);
+    renderEditorAttachments();
+};
+
+function renderViewerAttachments(attachments) {
+    viewerAttachments.innerHTML = '';
+    if (!attachments || attachments.length === 0) return;
+    
+    const images = attachments.filter(a => a.type === 'image');
+    const audios = attachments.filter(a => a.type === 'audio');
+    const videos = attachments.filter(a => a.type === 'video');
+    
+    // Photos Section
+    if (images.length > 0) {
+        const sec = document.createElement('div');
+        sec.className = 'viewer-media-section';
+        sec.innerHTML = `<span class="viewer-media-section-title">Photos</span>`;
+        const grid = document.createElement('div');
+        grid.className = 'viewer-images-grid';
+        
+        images.forEach(img => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'viewer-image-wrapper';
+            wrapper.innerHTML = `<img src="${img.data}" alt="${img.name}">`;
+            wrapper.addEventListener('click', () => openLightbox(img.data, img.name));
+            grid.appendChild(wrapper);
+        });
+        sec.appendChild(grid);
+        viewerAttachments.appendChild(sec);
+    }
+    
+    // Voice Section
+    if (audios.length > 0) {
+        const sec = document.createElement('div');
+        sec.className = 'viewer-media-section';
+        sec.innerHTML = `<span class="viewer-media-section-title">Voice Recordings</span>`;
+        
+        audios.forEach(aud => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'viewer-audio-wrapper';
+            wrapper.innerHTML = `
+                <span style="font-size: 13px; color: var(--text-secondary); margin-bottom: 4px;"><i class="fa-solid fa-microphone"></i> ${aud.name}</span>
+                <audio controls src="${aud.data}"></audio>
+            `;
+            sec.appendChild(wrapper);
+        });
+        viewerAttachments.appendChild(sec);
+    }
+    
+    // Video Section
+    if (videos.length > 0) {
+        const sec = document.createElement('div');
+        sec.className = 'viewer-media-section';
+        sec.innerHTML = `<span class="viewer-media-section-title">Videos</span>`;
+        
+        videos.forEach(vid => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'viewer-video-wrapper';
+            wrapper.innerHTML = `
+                <span style="font-size: 13px; color: var(--text-secondary); margin-bottom: 4px;"><i class="fa-solid fa-video"></i> ${vid.name}</span>
+                <video controls src="${vid.data}"></video>
+            `;
+            sec.appendChild(wrapper);
+        });
+        viewerAttachments.appendChild(sec);
+    }
+}
+
+function openLightbox(src, name) {
+    lightbox.style.display = 'block';
+    lightboxImg.src = src;
+    lightboxCaption.textContent = name;
+}
+
+// 8. PDF EXPORT UTILITIES
+
+function downloadCurrentEntryAsPdf() {
+    if (!state.selectedHistoryDate) return;
+    const id = state.selectedHistoryDate;
+    const entry = state.entries[id];
+    if (!entry) return;
+    
+    const datePart = id.split('_')[0];
+    const timeStr = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    
+    const element = document.createElement('div');
+    element.className = 'pdf-export-layout';
+    
+    let imagesHtml = '';
+    const images = entry.attachments ? entry.attachments.filter(a => a.type === 'image') : [];
+    if (images.length > 0) {
+        imagesHtml = `
+            <div class="pdf-images-grid" style="margin-top: 30px;">
+                ${images.map(img => `<div class="pdf-image-wrapper"><img src="${img.data}"></div>`).join('')}
+            </div>
+        `;
+    }
+    
+    element.innerHTML = `
+        <div class="pdf-header">
+            <h2>${entry.title || 'Untitled Reflection'}</h2>
+            <div class="pdf-meta">
+                <span>Date: ${formatDate(datePart)} ${timeStr ? 'at ' + timeStr : ''}</span>
+                <span>Mood: ${getMoodEmoji(entry.mood)} ${entry.mood || 'Standard'}</span>
+            </div>
+        </div>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin-bottom: 20px;">
+        <div class="pdf-body">${entry.body}</div>
+        ${imagesHtml}
+    `;
+    
+    const opt = {
+        margin:       10,
+        filename:     `reflection_${datePart}.pdf`,
+        image:        { type: 'jpeg', quality: 0.95 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    
+    html2pdf().from(element).set(opt).save();
+}
+
+function exportFullJournalAsPdfBook() {
+    const fileIds = Object.keys(state.entries).sort();
+    if (fileIds.length === 0) {
+        alert('You do not have any entries in your journal to export yet!');
+        return;
+    }
+    
+    btnExportPdfBook.disabled = true;
+    btnExportPdfBook.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating PDF Book...';
+    
+    setTimeout(() => {
+        try {
+            const element = document.createElement('div');
+            element.className = 'pdf-export-layout';
+            
+            let coverHtml = `
+                <div class="pdf-book-cover">
+                    <h1>My Personal Journal</h1>
+                    <p>A Chronological Book of Daily Reflections</p>
+                    <p style="margin-top: 20px; font-size: 14px; color: #94a3b8;">Generated on ${formatDate(getTodayString())}</p>
+                </div>
+            `;
+            
+            let entriesHtml = '';
+            fileIds.forEach(id => {
+                const entry = state.entries[id];
+                const datePart = id.split('_')[0];
+                const timeStr = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                
+                let imagesHtml = '';
+                const images = entry.attachments ? entry.attachments.filter(a => a.type === 'image') : [];
+                if (images.length > 0) {
+                    imagesHtml = `
+                        <div class="pdf-images-grid" style="margin-top: 25px;">
+                            ${images.map(img => `<div class="pdf-image-wrapper"><img src="${img.data}"></div>`).join('')}
+                        </div>
+                    `;
+                }
+                
+                entriesHtml += `
+                    <div class="pdf-entry">
+                        <h2>${entry.title || 'Untitled Reflection'}</h2>
+                        <div class="pdf-meta">
+                            <span>Date: ${formatDate(datePart)} ${timeStr ? 'at ' + timeStr : ''}</span>
+                            <span>Mood: ${getMoodEmoji(entry.mood)} ${entry.mood || 'Standard'}</span>
+                        </div>
+                        <div class="pdf-body">${entry.body}</div>
+                        ${imagesHtml}
+                    </div>
+                `;
+            });
+            
+            element.innerHTML = coverHtml + entriesHtml;
+            
+            const opt = {
+                margin:       15,
+                filename:     `ambitious_journal_book.pdf`,
+                image:        { type: 'jpeg', quality: 0.95 },
+                html2canvas:  { scale: 1.5, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            
+            html2pdf().from(element).set(opt).save().then(() => {
+                btnExportPdfBook.disabled = false;
+                btnExportPdfBook.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Export Journal as PDF Book';
+            }).catch(err => {
+                throw err;
+            });
+        } catch (err) {
+            console.error(err);
+            alert('Failed to generate PDF book: ' + err.message);
+            btnExportPdfBook.disabled = false;
+            btnExportPdfBook.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Export Journal as PDF Book';
+        }
+    }, 100);
+}
+
 // DOM Event Listeners
 authForm.addEventListener('submit', handleLogin);
 toggleSetupBtn.addEventListener('click', (e) => {
@@ -853,6 +1225,67 @@ btnClearCache.addEventListener('click', clearCacheAndLogout);
 btnLock.addEventListener('click', () => {
     // Reset state & reload
     location.reload();
+});
+
+// Attachment Event Listeners
+btnAddPhoto.addEventListener('click', () => inputPhoto.click());
+btnAddVideo.addEventListener('click', () => inputVideo.click());
+
+inputPhoto.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+        const compressedBase64 = await compressImage(file);
+        state.currentAttachments.push({
+            type: 'image',
+            name: file.name,
+            data: compressedBase64
+        });
+        renderEditorAttachments();
+    } catch (err) {
+        console.error(err);
+        alert('Failed to process image: ' + err.message);
+    }
+    inputPhoto.value = '';
+});
+
+inputVideo.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const limit = 5 * 1024 * 1024;
+    if (file.size > limit) {
+        alert('Video file is too large. Please select a video smaller than 5MB to ensure fast encryption & sync.');
+        inputVideo.value = '';
+        return;
+    }
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+        state.currentAttachments.push({
+            type: 'video',
+            name: file.name,
+            data: reader.result
+        });
+        renderEditorAttachments();
+    };
+    reader.onerror = () => alert('Failed to read video file.');
+    inputVideo.value = '';
+});
+
+btnRecordAudio.addEventListener('click', startRecording);
+btnStopRecord.addEventListener('click', () => stopRecording(true));
+btnCancelRecord.addEventListener('click', () => stopRecording(false));
+
+btnDownloadPdf.addEventListener('click', downloadCurrentEntryAsPdf);
+btnExportPdfBook.addEventListener('click', exportFullJournalAsPdfBook);
+
+lightboxClose.addEventListener('click', () => {
+    lightbox.style.display = 'none';
+});
+lightbox.addEventListener('click', (e) => {
+    if (e.target === lightbox) {
+        lightbox.style.display = 'none';
+    }
 });
 
 // Run check on startup to show setup if first time
