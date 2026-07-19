@@ -270,7 +270,10 @@ async function syncFromGithub() {
 
 // 3. UI STATE & INTERACTION UTILITIES
 function setSyncStatus(type, message) {
-    syncStatus.className = `status-indicator sync-${type}`;
+    const parent = syncStatus.parentElement;
+    if (parent) {
+        parent.className = `status-indicator sync-${type}`;
+    }
     let icon = '<i class="fa-solid fa-cloud-check"></i>';
     if (type === 'syncing') icon = '<i class="fa-solid fa-arrows-rotate fa-spin"></i>';
     if (type === 'error') icon = '<i class="fa-solid fa-triangle-exclamation"></i>';

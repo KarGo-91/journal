@@ -389,6 +389,22 @@ textarea:focus {
     background-color: rgba(16, 185, 129, 0.06);
     border: 1px solid rgba(16, 185, 129, 0.15);
     color: var(--accent-emerald);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.status-indicator.sync-syncing {
+    background-color: rgba(245, 158, 11, 0.06);
+    border: 1px solid rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+}
+
+.status-indicator.sync-error {
+    background-color: rgba(239, 68, 68, 0.06);
+    border: 1px solid rgba(239, 68, 68, 0.15);
+    color: var(--accent-rose);
 }
 
 /* Tab Contents Toggle */
@@ -1012,6 +1028,9 @@ textarea:focus {
     
     .top-bar {
         padding: 20px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
     }
     
     .tab-content {
