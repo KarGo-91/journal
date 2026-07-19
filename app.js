@@ -518,7 +518,8 @@ function getMoodEmoji(mood) {
         peaceful: '😌',
         focused: '🧠',
         tired: '🥱',
-        low: '😔'
+        low: '😔',
+        love: '❤️'
     };
     return moods[mood] || '✍️';
 }
