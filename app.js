@@ -290,7 +290,23 @@ function getTodayString() {
 
 // Local Storage Cache Management
 function saveLocalCache() {
-    localStorage.setItem('journal_entries_cache', JSON.stringify(state.entries));
+    const cacheCopy = {};
+    Object.keys(state.entries).forEach(key => {
+        const entry = state.entries[key];
+        cacheCopy[key] = {
+            title: entry.title,
+            body: entry.body,
+            mood: entry.mood,
+            timestamp: entry.timestamp,
+            sha: entry.sha,
+            attachments: entry.attachments ? entry.attachments.map(att => ({
+                type: att.type,
+                name: att.name,
+                path: att.path
+            })) : []
+        };
+    });
+    localStorage.setItem('journal_entries_cache', JSON.stringify(cacheCopy));
 }
 
 function loadLocalCache() {
@@ -352,7 +368,7 @@ async function saveCurrentEntry() {
         return;
     }
     
-    setSyncStatus('syncing', 'Encrypting & syncing to GitHub...');
+    setSyncStatus('syncing', 'Preparing media files...');
     btnSave.disabled = true;
     
     const today = getTodayString();
@@ -365,16 +381,43 @@ async function saveCurrentEntry() {
         isNew = true;
     }
     
-    const path = `entries/${fileId}.enc`;
-    const entryData = {
-        title: title || 'Untitled Reflection',
-        body: body,
-        mood: mood,
-        timestamp: isNew ? Date.now() : (state.entries[fileId]?.timestamp || Date.now()),
-        attachments: state.currentAttachments
-    };
-    
     try {
+        const updatedAttachments = [];
+        for (let i = 0; i < state.currentAttachments.length; i++) {
+            const att = state.currentAttachments[i];
+            if (att.data) {
+                setSyncStatus('syncing', `Encrypting media file ${i+1}/${state.currentAttachments.length}...`);
+                const mediaPath = `media/${fileId}_${i}.enc`;
+                const encryptedMedia = await encryptData(att.data, state.password);
+                
+                let mediaSha = null;
+                try {
+                    const existingMedia = await fetchGithubFile(mediaPath);
+                    if (existingMedia) mediaSha = existingMedia.sha;
+                } catch (e) {}
+                
+                await writeGithubFile(mediaPath, encryptedMedia, mediaSha);
+                
+                updatedAttachments.push({
+                    type: att.type,
+                    name: att.name,
+                    path: mediaPath
+                });
+            } else {
+                updatedAttachments.push(att);
+            }
+        }
+        
+        setSyncStatus('syncing', 'Encrypting text & syncing to GitHub...');
+        const path = `entries/${fileId}.enc`;
+        const entryData = {
+            title: title || 'Untitled Reflection',
+            body: body,
+            mood: mood,
+            timestamp: isNew ? Date.now() : (state.entries[fileId]?.timestamp || Date.now()),
+            attachments: updatedAttachments
+        };
+        
         const jsonStr = JSON.stringify(entryData);
         const encryptedBase64 = await encryptData(jsonStr, state.password);
         
@@ -502,7 +545,49 @@ function selectHistoryEntry(id) {
     viewerDate.textContent = `${formatDate(datePart)} ${timeStr ? 'at ' + timeStr : ''}`;
     viewerMood.textContent = `${getMoodEmoji(entry.mood)} ${entry.mood ? entry.mood.charAt(0).toUpperCase() + entry.mood.slice(1) : 'Standard'}`;
     viewerBody.textContent = entry.body;
-    renderViewerAttachments(entry.attachments || []);
+    
+    const attachments = entry.attachments || [];
+    const needsLoading = attachments.some(att => att.path && !att.data);
+    
+    if (needsLoading) {
+        loadEntryMedia(id);
+    } else {
+        renderViewerAttachments(attachments);
+    }
+}
+
+async function loadEntryMedia(id) {
+    const entry = state.entries[id];
+    if (!entry || !entry.attachments) return;
+    
+    viewerAttachments.innerHTML = `
+        <div style="text-align: center; padding: 20px; border-top: 1px solid var(--border-color); margin-top: 20px; color: var(--text-secondary);">
+            <i class="fa-solid fa-spinner fa-spin"></i> Decrypting media files...
+        </div>
+    `;
+    
+    try {
+        for (const att of entry.attachments) {
+            if (att.path && !att.data) {
+                const rawMedia = await fetchGithubFile(att.path);
+                if (rawMedia && rawMedia.content) {
+                    att.data = await decryptData(rawMedia.content.replace(/\s/g, ''), state.password);
+                }
+            }
+        }
+        if (state.selectedHistoryDate === id) {
+            renderViewerAttachments(entry.attachments);
+        }
+    } catch (err) {
+        console.error(err);
+        if (state.selectedHistoryDate === id) {
+            viewerAttachments.innerHTML = `
+                <div style="text-align: center; padding: 20px; border-top: 1px solid var(--border-color); margin-top: 20px; color: var(--accent-rose);">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Failed to download or decrypt media.
+                </div>
+            `;
+        }
+    }
 }
 
 // Edit or delete entries
@@ -852,7 +937,7 @@ function compressImage(file) {
                 const canvas = document.createElement('canvas');
                 let width = img.width;
                 let height = img.height;
-                const maxDim = 1200;
+                const maxDim = 2048;
                 
                 if (width > maxDim || height > maxDim) {
                     if (width > height) {
@@ -913,7 +998,7 @@ async function startRecording() {
             const secs = String(recordSeconds % 60).padStart(2, '0');
             recordingTimer.textContent = `${mins}:${secs}`;
             
-            if (recordSeconds >= 180) { // Limit to 3 mins
+            if (recordSeconds >= 600) { // Limit to 10 mins
                 stopRecording(true);
             }
         }, 1000);
@@ -937,8 +1022,8 @@ function stopRecording(save) {
         if (save && audioChunks.length > 0) {
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             
-            if (audioBlob.size > 5 * 1024 * 1024) {
-                alert('Recording is too large (>5MB) and cannot be saved.');
+            if (audioBlob.size > 15 * 1024 * 1024) {
+                alert('Recording is too large (>15MB) and cannot be saved.');
                 return;
             }
             
@@ -1065,6 +1150,13 @@ function downloadCurrentEntryAsPdf() {
     const entry = state.entries[id];
     if (!entry) return;
     
+    const images = entry.attachments ? entry.attachments.filter(a => a.type === 'image') : [];
+    const unloaded = images.some(img => img.path && !img.data);
+    if (unloaded) {
+        alert('Please wait a moment for the photos to finish decrypting and try again.');
+        return;
+    }
+    
     const datePart = id.split('_')[0];
     const timeStr = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
     
@@ -1072,7 +1164,6 @@ function downloadCurrentEntryAsPdf() {
     element.className = 'pdf-export-layout';
     
     let imagesHtml = '';
-    const images = entry.attachments ? entry.attachments.filter(a => a.type === 'image') : [];
     if (images.length > 0) {
         imagesHtml = `
             <div class="pdf-images-grid" style="margin-top: 30px;">
@@ -1105,7 +1196,7 @@ function downloadCurrentEntryAsPdf() {
     html2pdf().from(element).set(opt).save();
 }
 
-function exportFullJournalAsPdfBook() {
+async function exportFullJournalAsPdfBook() {
     const fileIds = Object.keys(state.entries).sort();
     if (fileIds.length === 0) {
         alert('You do not have any entries in your journal to export yet!');
@@ -1113,73 +1204,92 @@ function exportFullJournalAsPdfBook() {
     }
     
     btnExportPdfBook.disabled = true;
-    btnExportPdfBook.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating PDF Book...';
+    btnExportPdfBook.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Downloading & Generating...';
     
-    setTimeout(() => {
-        try {
-            const element = document.createElement('div');
-            element.className = 'pdf-export-layout';
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    try {
+        const element = document.createElement('div');
+        element.className = 'pdf-export-layout';
+        
+        let coverHtml = `
+            <div class="pdf-book-cover">
+                <h1>My Personal Journal</h1>
+                <p>A Chronological Book of Daily Reflections</p>
+                <p style="margin-top: 20px; font-size: 14px; color: #94a3b8;">Generated on ${formatDate(getTodayString())}</p>
+            </div>
+        `;
+        
+        let entriesHtml = '';
+        for (let idx = 0; idx < fileIds.length; idx++) {
+            const id = fileIds[idx];
+            const entry = state.entries[id];
+            const datePart = id.split('_')[0];
+            const timeStr = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             
-            let coverHtml = `
-                <div class="pdf-book-cover">
-                    <h1>My Personal Journal</h1>
-                    <p>A Chronological Book of Daily Reflections</p>
-                    <p style="margin-top: 20px; font-size: 14px; color: #94a3b8;">Generated on ${formatDate(getTodayString())}</p>
-                </div>
-            `;
+            btnExportPdfBook.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Decrypting entry ${idx+1}/${fileIds.length}...`;
             
-            let entriesHtml = '';
-            fileIds.forEach(id => {
-                const entry = state.entries[id];
-                const datePart = id.split('_')[0];
-                const timeStr = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-                
-                let imagesHtml = '';
-                const images = entry.attachments ? entry.attachments.filter(a => a.type === 'image') : [];
-                if (images.length > 0) {
-                    imagesHtml = `
-                        <div class="pdf-images-grid" style="margin-top: 25px;">
-                            ${images.map(img => `<div class="pdf-image-wrapper"><img src="${img.data}"></div>`).join('')}
-                        </div>
-                    `;
+            let imagesHtml = '';
+            const images = entry.attachments ? entry.attachments.filter(a => a.type === 'image') : [];
+            
+            for (const img of images) {
+                if (img.path && !img.data) {
+                    try {
+                        const rawMedia = await fetchGithubFile(img.path);
+                        if (rawMedia && rawMedia.content) {
+                            img.data = await decryptData(rawMedia.content.replace(/\s/g, ''), state.password);
+                        }
+                    } catch (e) {
+                        console.error(`Failed to load image for entry ${id}:`, e);
+                    }
                 }
-                
-                entriesHtml += `
-                    <div class="pdf-entry">
-                        <h2>${entry.title || 'Untitled Reflection'}</h2>
-                        <div class="pdf-meta">
-                            <span>Date: ${formatDate(datePart)} ${timeStr ? 'at ' + timeStr : ''}</span>
-                            <span>Mood: ${getMoodEmoji(entry.mood)} ${entry.mood || 'Standard'}</span>
-                        </div>
-                        <div class="pdf-body">${entry.body}</div>
-                        ${imagesHtml}
+            }
+            
+            if (images.length > 0) {
+                imagesHtml = `
+                    <div class="pdf-images-grid" style="margin-top: 25px;">
+                        ${images.filter(img => img.data).map(img => `<div class="pdf-image-wrapper"><img src="${img.data}"></div>`).join('')}
                     </div>
                 `;
-            });
+            }
             
-            element.innerHTML = coverHtml + entriesHtml;
-            
-            const opt = {
-                margin:       15,
-                filename:     `ambitious_journal_book.pdf`,
-                image:        { type: 'jpeg', quality: 0.95 },
-                html2canvas:  { scale: 1.5, useCORS: true },
-                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            };
-            
-            html2pdf().from(element).set(opt).save().then(() => {
-                btnExportPdfBook.disabled = false;
-                btnExportPdfBook.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Export Journal as PDF Book';
-            }).catch(err => {
-                throw err;
-            });
-        } catch (err) {
-            console.error(err);
-            alert('Failed to generate PDF book: ' + err.message);
+            entriesHtml += `
+                <div class="pdf-entry">
+                    <h2>${entry.title || 'Untitled Reflection'}</h2>
+                    <div class="pdf-meta">
+                        <span>Date: ${formatDate(datePart)} ${timeStr ? 'at ' + timeStr : ''}</span>
+                        <span>Mood: ${getMoodEmoji(entry.mood)} ${entry.mood || 'Standard'}</span>
+                    </div>
+                    <div class="pdf-body">${entry.body}</div>
+                    ${imagesHtml}
+                </div>
+            `;
+        }
+        
+        element.innerHTML = coverHtml + entriesHtml;
+        
+        btnExportPdfBook.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Rendering PDF pages...';
+        
+        const opt = {
+            margin:       15,
+            filename:     `ambitious_journal_book.pdf`,
+            image:        { type: 'jpeg', quality: 0.95 },
+            html2canvas:  { scale: 1.5, useCORS: true },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        
+        html2pdf().from(element).set(opt).save().then(() => {
             btnExportPdfBook.disabled = false;
             btnExportPdfBook.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Export Journal as PDF Book';
-        }
-    }, 100);
+        }).catch(err => {
+            throw err;
+        });
+    } catch (err) {
+        console.error(err);
+        alert('Failed to generate PDF book: ' + err.message);
+        btnExportPdfBook.disabled = false;
+        btnExportPdfBook.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Export Journal as PDF Book';
+    }
 }
 
 // DOM Event Listeners
@@ -1252,9 +1362,9 @@ inputPhoto.addEventListener('change', async (e) => {
 inputVideo.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const limit = 5 * 1024 * 1024;
+    const limit = 35 * 1024 * 1024;
     if (file.size > limit) {
-        alert('Video file is too large. Please select a video smaller than 5MB to ensure fast encryption & sync.');
+        alert('Video file is too large. Please select a video smaller than 35MB to ensure fast encryption & sync.');
         inputVideo.value = '';
         return;
     }
