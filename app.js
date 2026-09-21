@@ -761,7 +761,7 @@ function renderMoodStats(totalEntries) {
         return;
     }
     
-    const moodCounts = { inspired: 0, peaceful: 0, focused: 0, tired: 0, low: 0 };
+    const moodCounts = { inspired: 0, peaceful: 0, focused: 0, tired: 0, low: 0, love: 0 };
     Object.keys(state.entries).forEach(d => {
         const mood = state.entries[d].mood;
         if (mood && moodCounts[mood] !== undefined) {
